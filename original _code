@@ -125,6 +125,9 @@ f_getTablePosition(string pos) =>
         "bottom_left" => position.bottom_left
         => position.top_right
 
+f_getWinColor(float pct) =>
+    na(pct) ? color.gray : pct >= 60 ? color.green : pct >= 50 ? color.yellow : color.red
+
 // Swing High detection function
 f_isSwingHigh(int strength) =>
     bool isHigh = true
@@ -224,6 +227,31 @@ var line entryZoneLine1 = na
 var line entryZoneLine2 = na
 var linefill entryZoneFill = na
 
+// Fib stats persistent counters
+var int totalFibSetups = 0
+var int countTouch38 = 0
+var int countTouch50 = 0
+var int countTouch61 = 0
+var int countTouch78 = 0
+var int winsFrom38 = 0
+var int winsFrom50 = 0
+var int winsFrom61 = 0
+var int winsFrom78 = 0
+var int totalFailures = 0
+var int totalWins = 0
+var int totalLosses = 0
+var int totalOpens = 0
+
+// Fib stats daily state
+var bool fibSessionCountedToday = false
+var bool touched38Today = false
+var bool touched50Today = false
+var bool touched61Today = false
+var bool touched78Today = false
+var bool fibResolvedToday = false
+var int fibResultToday = 0
+var bool fibStatsCommittedToday = false
+
 if newDay
     meanHigh := na
     meanLow := na
@@ -258,6 +286,16 @@ if newDay
     fib_618 := na
     fib_786 := na
     fib_100 := na
+
+    // Fib stats daily resets
+    fibSessionCountedToday := false
+    touched38Today := false
+    touched50Today := false
+    touched61Today := false
+    touched78Today := false
+    fibResolvedToday := false
+    fibResultToday := 0
+    fibStatsCommittedToday := false
 
     // Clean up fib lines and labels
     if i_showHistoricalFibs
@@ -489,6 +527,95 @@ if fibsDrawn and array.size(fibLines) > 0
         label.set_x(currentLabel, targetEndX)
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FIB STATS ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+bool fibMonitoringActive = fibsDrawn and isRTH
+
+// Count fib setup day once
+if fibMonitoringActive and not fibSessionCountedToday
+    totalFibSetups += 1
+    fibSessionCountedToday := true
+
+// Track strict touches
+if fibMonitoringActive
+    if breakoutState == 1
+        if low <= fib_382
+            touched38Today := true
+        if low <= fib_500
+            touched50Today := true
+        if low <= fib_618
+            touched61Today := true
+        if low <= fib_786
+            touched78Today := true
+    else if breakoutState == -1
+        if high >= fib_382
+            touched38Today := true
+        if high >= fib_500
+            touched50Today := true
+        if high >= fib_618
+            touched61Today := true
+        if high >= fib_786
+            touched78Today := true
+
+    // Cascading confirmations
+    if touched78Today
+        touched61Today := true
+        touched50Today := true
+        touched38Today := true
+    else if touched61Today
+        touched50Today := true
+        touched38Today := true
+
+    // Resolution checks
+    if not fibResolvedToday
+        bool touch0 = breakoutState == 1 ? high >= fib_0 : low <= fib_0
+        bool touch100 = breakoutState == 1 ? low <= fib_100 : high >= fib_100
+
+        if touch0 and touch100
+            fibResultToday := -1
+            fibResolvedToday := true
+        else if touch100
+            fibResultToday := -1
+            fibResolvedToday := true
+        else if touch0
+            fibResultToday := 1
+            fibResolvedToday := true
+
+// Commit daily fib stats at resolution or end of session
+bool fibCommitTrigger = fibSessionCountedToday and not fibStatsCommittedToday and (fibResolvedToday or isEODCheckBar or (not isRTH and isRTH[1]))
+
+if fibCommitTrigger
+    if touched38Today
+        countTouch38 += 1
+    if touched50Today
+        countTouch50 += 1
+    if touched61Today
+        countTouch61 += 1
+    if touched78Today
+        countTouch78 += 1
+
+    if fibResolvedToday
+        if fibResultToday == 1
+            totalWins += 1
+            if touched38Today
+                winsFrom38 += 1
+            if touched50Today
+                winsFrom50 += 1
+            if touched61Today
+                winsFrom61 += 1
+            if touched78Today
+                winsFrom78 += 1
+        else if fibResultToday == -1
+            totalLosses += 1
+            if touched38Today
+                totalFailures += 1
+    else
+        totalOpens += 1
+
+    fibStatsCommittedToday := true
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // STATISTICS ENGINE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -527,6 +654,13 @@ float downBiasSuccessPct = downBiasDays > 0 ? (downBiasBelowORL / downBiasDays) 
 int totalBreakoutHits = upBiasAboveORH + downBiasBelowORL
 int totalBreakoutDays = upBiasDays + downBiasDays
 float totalBreakoutPct = totalBreakoutDays > 0 ? (totalBreakoutHits / totalBreakoutDays) * 100 : 0
+
+float zoneEntriesPct = totalFibSetups > 0 ? (countTouch38 / totalFibSetups) * 100 : na
+float winPct38 = countTouch38 > 0 ? (winsFrom38 / countTouch38) * 100 : na
+float winPct50 = countTouch50 > 0 ? (winsFrom50 / countTouch50) * 100 : na
+float winPct61 = countTouch61 > 0 ? (winsFrom61 / countTouch61) * 100 : na
+float winPct78 = countTouch78 > 0 ? (winsFrom78 / countTouch78) * 100 : na
+float blowThroughPct = countTouch38 > 0 ? (totalFailures / countTouch38) * 100 : na
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VOLUME PROFILE CALCULATION
@@ -727,12 +861,26 @@ bgcolor(isEODCheckBar and biasMismatchToday ? color.new(color.red, 85) : na, tit
 // DASHBOARD TABLE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-int tableRows = i_showDetailStats ? 20 : 16
+int tableRows = i_showDetailStats ? 30 : 24
 var table dashboard = table.new(f_getTablePosition(i_dashPosition), 2, tableRows, bgcolor=color.new(color.black, 80), border_width=1)
 
 if barstate.islast
     int row = 0
-    
+
+    string fibSetupsText = str.tostring(totalFibSetups)
+    string zoneEntriesText = na(zoneEntriesPct) ? "—" : str.tostring(countTouch38) + "/" + str.tostring(totalFibSetups) + " (" + str.tostring(zoneEntriesPct, "#.0") + "%)"
+    string win38Text = countTouch38 > 0 ? str.tostring(winsFrom38) + "/" + str.tostring(countTouch38) + " (" + str.tostring(winPct38, "#.0") + "%)" : "—"
+    string win50Text = countTouch50 > 0 ? str.tostring(winsFrom50) + "/" + str.tostring(countTouch50) + " (" + str.tostring(winPct50, "#.0") + "%)" : "—"
+    string win61Text = countTouch61 > 0 ? str.tostring(winsFrom61) + "/" + str.tostring(countTouch61) + " (" + str.tostring(winPct61, "#.0") + "%)" : "—"
+    string win78Text = countTouch78 > 0 ? str.tostring(winsFrom78) + "/" + str.tostring(countTouch78) + " (" + str.tostring(winPct78, "#.0") + "%)" : "—"
+    string blowThroughText = countTouch38 > 0 ? str.tostring(totalFailures) + "/" + str.tostring(countTouch38) + " (" + str.tostring(blowThroughPct, "#.0") + "%)" : "—"
+
+    color win38Color = f_getWinColor(winPct38)
+    color win50Color = f_getWinColor(winPct50)
+    color win61Color = f_getWinColor(winPct61)
+    color win78Color = f_getWinColor(winPct78)
+    color blowThroughColor = na(blowThroughPct) ? color.gray : blowThroughPct <= 40 ? color.green : blowThroughPct <= 60 ? color.yellow : color.red
+
     // Header
     table.cell(dashboard, 0, row, "ORB Dashboard", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 60))
     table.cell(dashboard, 1, row, str.tostring(totalDays) + " days", text_color=color.gray, text_size=size.tiny, bgcolor=color.new(color.blue, 60))
@@ -878,11 +1026,48 @@ if barstate.islast
             table.cell(dashboard, 0, row, "Price", text_color=color.white, text_size=size.tiny)
             table.cell(dashboard, 1, row, priceVsZone, text_color=zoneColor, text_size=size.tiny)
             row += 1
+
+    // Fib Stats block
+    table.cell(dashboard, 0, row, "─────────", text_color=color.gray, text_size=size.tiny)
+    table.cell(dashboard, 1, row, "─────────", text_color=color.gray, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Fib Stats", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, "Post-ORB", text_color=color.gray, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Fib Setups", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, fibSetupsText, text_color=color.white, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Zone Entries ≥38", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, zoneEntriesText, text_color=color.white, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Win ≥38", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, win38Text, text_color=win38Color, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Win ≥50", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, win50Text, text_color=win50Color, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Win ≥61", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, win61Text, text_color=win61Color, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Win ≥78", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, win78Text, text_color=win78Color, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Blow-Through", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, blowThroughText, text_color=blowThroughColor, text_size=size.tiny)
+    row += 1
     else
         table.cell(dashboard, 0, row, "Fib Setup", text_color=color.white, text_size=size.tiny)
         table.cell(dashboard, 1, row, "Disabled", text_color=color.gray, text_size=size.tiny)
         row += 1
-    
+
     // Session Status
     string orStatus = inMeanWindow ? "📊 Mean Window" : inORWindow ? "📊 OR Window" : orComplete ? "✓ OR Complete" : "⏸ Pre-Market"
     color orStatusColor = inMeanWindow ? color.yellow : inORWindow ? color.orange : orComplete ? color.green : color.gray
