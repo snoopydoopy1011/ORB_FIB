@@ -1,0 +1,457 @@
+Roadmap: Post-ORB Fib Behavior Stats (Dashboard Analytics, Not a Strategy)
+0) Goal
+
+Add a Fib Stats section to the existing dashboard table that answers:
+
+How often price retraces back into the entry zone after fibs are drawn (opportunity)?
+
+Conditional win rates based on how deep the retrace goes:
+
+Win rate given touched ≥38.2
+
+Win rate given touched ≥50.0
+
+Win rate given touched ≥61.8
+
+Win rate given touched ≥78.6 (“shakeout” question)
+
+Blow-through rate: after touching 38.2, how often does price hit 100% before 0%?
+
+V1 uses strict touches (no “near miss” tolerances).
+V2 can add “near miss / ATR tolerance” if desired later.
+
+1) Definitions (must be consistent and objective)
+1.1 “Fib Session”
+
+A day is a “Fib Session” if and only if:
+
+fibsDrawn == true at any point during that trading day’s RTH session.
+
+Count one fib session per day max.
+
+1.2 Fib Levels
+
+Assume these floats exist and are valid once fibsDrawn is true:
+
+fib_0, fib_382, fib_500, fib_618, fib_786, fib_100
+Also assume breakoutState exists:
+
+breakoutState == 1 → long setup (retracement down)
+
+breakoutState == -1 → short setup (retracement up)
+
+1.3 “Touch” (Strict, V1)
+
+A level is “touched” if the bar range crosses it:
+
+For long setup: low <= level
+
+For short setup: high >= level
+
+(Use strict touch; no tolerance.)
+
+1.4 “Resolution” (Win/Loss/Open)
+
+Only evaluated after fibs are drawn.
+
+WIN: price touches 0% before touching 100%
+
+LOSS: price touches 100% before touching 0%
+
+OPEN: by market close, neither 0 nor 100 has been touched
+
+Tie-breaker rule (one candle wicks both 0 and 100):
+
+Count as LOSS (conservative).
+
+1.5 Cascading “Touched ≥ X”
+
+Touched thresholds are cumulative:
+
+If touched 61.8, then touched 50 and 38 are also true.
+
+If touched 78.6, then touched 61.8, 50, 38 are true.
+
+Implementation can either:
+
+set each flag directly by checking each level, OR
+
+track “max depth reached” and infer flags.
+
+2) Data Outputs (what appears in the dashboard)
+
+Add a “FIB STATS” block with rows like:
+
+Activity / Opportunity
+
+Fib Setups = total fib sessions counted
+
+Zone Entries (≥38) = countTouch38 / totalFibSetups (and ratio)
+
+Conditional win rates
+
+Win ≥38 = winsFrom38 / countTouch38
+
+Win ≥50 = winsFrom50 / countTouch50
+
+Win ≥61 = winsFrom61 / countTouch61
+
+Win ≥78 = winsFrom78 / countTouch78
+
+Risk
+
+Blow-Through = totalFailures / countTouch38
+
+where “failure” means: touched 38 at some point, and outcome was LOSS (100 before 0).
+
+(If denominators are zero, display “—” or “0%”.)
+
+3) Persistent Counters (database variables)
+
+These must persist across bars and across days on the chart:
+
+3.1 Setup counter
+
+var int totalFibSetups = 0
+
+3.2 Touch counters (opportunity funnel)
+
+var int countTouch38 = 0
+
+var int countTouch50 = 0
+
+var int countTouch61 = 0
+
+var int countTouch78 = 0
+
+3.3 Win counters (success funnel)
+
+Wins are conditional on having touched that depth (or deeper) at least once that day.
+
+var int winsFrom38 = 0
+
+var int winsFrom50 = 0
+
+var int winsFrom61 = 0
+
+var int winsFrom78 = 0
+
+3.4 Failure counter (blow-through)
+
+var int totalFailures = 0
+Definition: days where touched 38 at least once AND resolved LOSS.
+
+3.5 Optional (nice to have)
+
+var int totalWins = 0
+
+var int totalLosses = 0
+
+var int totalOpens = 0
+
+Not required, but helpful.
+
+4) Intraday State (reset daily)
+
+These must reset at the start of each new RTH day (newDay in your script):
+
+4.1 Day/session booleans
+
+var bool fibSessionCountedToday = false
+Prevents counting multiple setups in same day (in case fibs redraw due to bug or reset).
+
+4.2 Touch flags (strict)
+
+var bool touched38Today = false
+
+var bool touched50Today = false
+
+var bool touched61Today = false
+
+var bool touched78Today = false
+
+4.3 Resolution flags
+
+var bool fibResolvedToday = false
+
+var int fibResultToday = 0
+
+1 = WIN, -1 = LOSS, 0 = OPEN/UNRESOLVED
+
+4.4 “Commit guard”
+
+var bool fibStatsCommittedToday = false
+Ensures persistent counters are updated once per day.
+
+5) Engine: State Machine Logic (run only when fibs are active)
+5.1 When to activate monitoring
+
+Monitoring block should run only if:
+
+fibsDrawn == true
+
+AND the bar is in RTH (isRTH) (recommended)
+
+AND NOT fibResolvedToday (for resolution checks), but touch checks can run until resolution.
+
+5.2 Count the setup day (once)
+
+When fibsDrawn becomes true for the first time that day:
+
+if not fibSessionCountedToday:
+
+totalFibSetups += 1
+
+fibSessionCountedToday := true
+
+5.3 Update touch flags (strict, cascading)
+
+For long setup (breakoutState == 1):
+
+Touch 38 if low <= fib_382
+
+Touch 50 if low <= fib_500
+
+Touch 61 if low <= fib_618
+
+Touch 78 if low <= fib_786
+
+For short setup (breakoutState == -1):
+
+Touch 38 if high >= fib_382
+
+Touch 50 if high >= fib_500
+
+Touch 61 if high >= fib_618
+
+Touch 78 if high >= fib_786
+
+Once higher depth is touched, optionally force lower ones to true (cascading), e.g.:
+
+if touched61 → set touched50 & touched38 true
+
+if touched78 → set touched61, touched50, touched38 true
+
+5.4 Resolve win/loss (tie-breaker loss)
+
+For long setup:
+
+touch0 = high >= fib_0 (or low <= fib_0 depending on fib orientation; verify)
+
+touch100 = low <= fib_100
+
+For short setup:
+
+touch0 = low <= fib_0 (or high >= fib_0; verify)
+
+touch100 = high >= fib_100
+
+Important: because fib_0 is pivot point and fib_100 is OR anchor, the correct “touch” direction depends on how fib levels are defined in code. The implementer must confirm:
+
+In your current code, fib_0 := pivotPrice and fib_100 := OR anchor for both long and short.
+
+Therefore, “touch 0” should mean price reaches the pivot price.
+
+“touch 100” should mean price reaches the OR anchor.
+
+Tie-breaker logic:
+
+If touch0 and touch100 are both true on same bar:
+
+resolve LOSS (fibResultToday = -1), fibResolvedToday = true
+
+Else if touch100 first:
+
+LOSS
+
+Else if touch0 first:
+
+WIN
+
+Only resolve once:
+
+if not fibResolvedToday then check and set.
+
+5.5 When to commit daily results into persistent counters
+
+Commit should occur at one of these triggers:
+
+Trigger A: Immediately when day resolves (win/loss)
+OR
+Trigger B: At EOD (market close check bar), if unresolved.
+
+Preferred: do both safely:
+
+If resolved intraday → commit immediately once.
+
+If not resolved by EOD → commit at EOD as OPEN.
+
+Commit block conditions:
+
+fibSessionCountedToday == true
+
+fibStatsCommittedToday == false
+
+AND ( fibResolvedToday == true OR isEODCheckBar == true OR not isRTH and isRTH[1] )
+
+When committing:
+
+Increment touch counters based on today’s flags:
+
+if touched38Today → countTouch38 += 1
+
+if touched50Today → countTouch50 += 1
+
+if touched61Today → countTouch61 += 1
+
+if touched78Today → countTouch78 += 1
+
+Increment win/loss/open counters based on result:
+
+if fibResolvedToday:
+
+if fibResultToday == 1:
+
+totalWins += 1 (optional)
+
+if touched38Today → winsFrom38 += 1
+
+if touched50Today → winsFrom50 += 1
+
+if touched61Today → winsFrom61 += 1
+
+if touched78Today → winsFrom78 += 1
+
+if fibResultToday == -1:
+
+totalLosses += 1 (optional)
+
+if touched38Today → totalFailures += 1 (blow-through definition)
+
+else (unresolved by EOD):
+
+totalOpens += 1 (optional)
+
+Mark:
+
+fibStatsCommittedToday := true
+
+6) Display Formulas (table math)
+
+Compute on barstate.islast for display:
+
+zoneEntriesPct = totalFibSetups > 0 ? (countTouch38 / totalFibSetups) * 100 : na
+
+winPct38 = countTouch38 > 0 ? (winsFrom38 / countTouch38) * 100 : na
+
+winPct50 = countTouch50 > 0 ? (winsFrom50 / countTouch50) * 100 : na
+
+winPct61 = countTouch61 > 0 ? (winsFrom61 / countTouch61) * 100 : na
+
+winPct78 = countTouch78 > 0 ? (winsFrom78 / countTouch78) * 100 : na
+
+blowThroughPct = countTouch38 > 0 ? (totalFailures / countTouch38) * 100 : na
+
+Formatting:
+
+show “—” if denominator is 0.
+
+Color ideas:
+
+green if ≥60%
+
+yellow if 50–60%
+
+red if <50%
+
+shakeout win % gets special emphasis.
+
+7) Naming Conventions (recommended)
+
+Use consistent camelCase and clear prefixes:
+
+Persistent counters
+
+totalFibSetups
+
+countTouch38, countTouch50, countTouch61, countTouch78
+
+winsFrom38, winsFrom50, winsFrom61, winsFrom78
+
+totalFailures
+
+Optional: totalWins, totalLosses, totalOpens
+
+Daily state
+
+fibSessionCountedToday
+
+touched38Today, touched50Today, touched61Today, touched78Today
+
+fibResolvedToday, fibResultToday
+
+fibStatsCommittedToday
+
+8) Edge Cases & Rules (explicit)
+
+Multiple fib setups in same day
+
+Only count first occurrence. Use fibSessionCountedToday to guard.
+
+No zone touch
+
+If price never touches 38.2, then no touch counters increment (except totalFibSetups already counted).
+
+If it still hits 0 without touching 38 (trend day), it will register as a WIN day optionally, but conditional stats won’t include it (fine).
+
+Resolution without zone touch
+
+Allowed. Does not affect conditional win rates since denominators are touch counters.
+
+OPEN outcomes
+
+If neither 0 nor 100 touched by EOD, commit as OPEN.
+
+OPEN does not count toward failures or wins.
+
+Tie-breaker
+
+If both 0 and 100 touched same bar: LOSS.
+
+Strict touches only (V1)
+
+No tolerance. V2 may add ATR/tick tolerance.
+
+9) Integration Checklist (where to put code)
+
+Implementation steps inside existing indicator:
+
+Add persistent counters near other “STATISTICS ENGINE” vars.
+
+Add daily reset of intraday fib-stat vars inside the if newDay reset block.
+
+Add “fib monitoring” block after fibs are calculated/drawn (after fibsDrawn := true) so levels exist.
+
+Add “commit results” block near end-of-day logic (you already have isEODCheckBar and marketCloseBarToday).
+
+Add dashboard rows in the table-building section:
+
+Insert a separator line
+
+Add FIB STATS rows
+
+Display ratios and percentages
+
+10) V2 Extensions (do NOT implement now)
+
+Leave notes for future:
+
+“Near miss” tolerance (ATR-based) for 0/100
+
+Time-to-zone metrics (bars from fib draw to first touch)
+
+Time-in-zone metrics (bars where close is inside 38–61)
+
+Reclaim ladder metrics after deepest touch
+
+MFE from deepest point (in ORW or ATR)
