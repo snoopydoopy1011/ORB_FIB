@@ -241,6 +241,14 @@ var int totalFailures = 0
 var int totalWins = 0
 var int totalLosses = 0
 var int totalOpens = 0
+var int biasUpLongSetups = 0
+var int biasUpShortSetups = 0
+var int biasDownLongSetups = 0
+var int biasDownShortSetups = 0
+var int biasUpLongWins = 0
+var int biasUpShortWins = 0
+var int biasDownLongWins = 0
+var int biasDownShortWins = 0
 
 // Fib stats daily state
 var bool fibSessionCountedToday = false
@@ -586,6 +594,15 @@ if fibMonitoringActive
 bool fibCommitTrigger = fibSessionCountedToday and not fibStatsCommittedToday and (fibResolvedToday or isEODCheckBar or (not isRTH and isRTH[1]))
 
 if fibCommitTrigger
+    if biasDirection == 1 and breakoutState == 1
+        biasUpLongSetups += 1
+    else if biasDirection == 1 and breakoutState == -1
+        biasUpShortSetups += 1
+    else if biasDirection == -1 and breakoutState == 1
+        biasDownLongSetups += 1
+    else if biasDirection == -1 and breakoutState == -1
+        biasDownShortSetups += 1
+
     if touched38Today
         countTouch38 += 1
     if touched50Today
@@ -606,6 +623,14 @@ if fibCommitTrigger
                 winsFrom61 += 1
             if touched78Today
                 winsFrom78 += 1
+            if biasDirection == 1 and breakoutState == 1
+                biasUpLongWins += 1
+            else if biasDirection == 1 and breakoutState == -1
+                biasUpShortWins += 1
+            else if biasDirection == -1 and breakoutState == 1
+                biasDownLongWins += 1
+            else if biasDirection == -1 and breakoutState == -1
+                biasDownShortWins += 1
         else if fibResultToday == -1
             totalLosses += 1
             if touched38Today
@@ -661,6 +686,10 @@ float winPct50 = countTouch50 > 0 ? (winsFrom50 / countTouch50) * 100 : na
 float winPct61 = countTouch61 > 0 ? (winsFrom61 / countTouch61) * 100 : na
 float winPct78 = countTouch78 > 0 ? (winsFrom78 / countTouch78) * 100 : na
 float blowThroughPct = countTouch38 > 0 ? (totalFailures / countTouch38) * 100 : na
+float biasUpLongWinPct = biasUpLongSetups > 0 ? (biasUpLongWins / biasUpLongSetups) * 100 : na
+float biasUpShortWinPct = biasUpShortSetups > 0 ? (biasUpShortWins / biasUpShortSetups) * 100 : na
+float biasDownLongWinPct = biasDownLongSetups > 0 ? (biasDownLongWins / biasDownLongSetups) * 100 : na
+float biasDownShortWinPct = biasDownShortSetups > 0 ? (biasDownShortWins / biasDownShortSetups) * 100 : na
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VOLUME PROFILE CALCULATION
@@ -861,6 +890,7 @@ bgcolor(isEODCheckBar and biasMismatchToday ? color.new(color.red, 85) : na, tit
 // DASHBOARD TABLE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+int tableRows = i_showDetailStats ? 35 : 29
 int tableRows = i_showDetailStats ? 30 : 24
 var table dashboard = table.new(f_getTablePosition(i_dashPosition), 2, tableRows, bgcolor=color.new(color.black, 80), border_width=1)
 
@@ -874,12 +904,20 @@ if barstate.islast
     string win61Text = countTouch61 > 0 ? str.tostring(winsFrom61) + "/" + str.tostring(countTouch61) + " (" + str.tostring(winPct61, "#.0") + "%)" : "—"
     string win78Text = countTouch78 > 0 ? str.tostring(winsFrom78) + "/" + str.tostring(countTouch78) + " (" + str.tostring(winPct78, "#.0") + "%)" : "—"
     string blowThroughText = countTouch38 > 0 ? str.tostring(totalFailures) + "/" + str.tostring(countTouch38) + " (" + str.tostring(blowThroughPct, "#.0") + "%)" : "—"
+    string biasUpLongText = biasUpLongSetups > 0 ? str.tostring(biasUpLongWins) + "/" + str.tostring(biasUpLongSetups) + " (" + str.tostring(biasUpLongWinPct, "#.0") + "%)" : "—"
+    string biasUpShortText = biasUpShortSetups > 0 ? str.tostring(biasUpShortWins) + "/" + str.tostring(biasUpShortSetups) + " (" + str.tostring(biasUpShortWinPct, "#.0") + "%)" : "—"
+    string biasDownLongText = biasDownLongSetups > 0 ? str.tostring(biasDownLongWins) + "/" + str.tostring(biasDownLongSetups) + " (" + str.tostring(biasDownLongWinPct, "#.0") + "%)" : "—"
+    string biasDownShortText = biasDownShortSetups > 0 ? str.tostring(biasDownShortWins) + "/" + str.tostring(biasDownShortSetups) + " (" + str.tostring(biasDownShortWinPct, "#.0") + "%)" : "—"
 
     color win38Color = f_getWinColor(winPct38)
     color win50Color = f_getWinColor(winPct50)
     color win61Color = f_getWinColor(winPct61)
     color win78Color = f_getWinColor(winPct78)
     color blowThroughColor = na(blowThroughPct) ? color.gray : blowThroughPct <= 40 ? color.green : blowThroughPct <= 60 ? color.yellow : color.red
+    color biasUpLongColor = f_getWinColor(biasUpLongWinPct)
+    color biasUpShortColor = f_getWinColor(biasUpShortWinPct)
+    color biasDownLongColor = f_getWinColor(biasDownLongWinPct)
+    color biasDownShortColor = f_getWinColor(biasDownShortWinPct)
 
     // Header
     table.cell(dashboard, 0, row, "ORB Dashboard", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 60))
@@ -1062,6 +1100,26 @@ if barstate.islast
 
     table.cell(dashboard, 0, row, "Blow-Through", text_color=color.white, text_size=size.tiny)
     table.cell(dashboard, 1, row, blowThroughText, text_color=blowThroughColor, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Bias Alignment", text_color=color.white, text_size=size.tiny)
+    table.cell(dashboard, 1, row, "Win Rate", text_color=color.gray, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Up Bias • Long", text_color=i_upBiasColor, text_size=size.tiny)
+    table.cell(dashboard, 1, row, biasUpLongText, text_color=biasUpLongColor, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Up Bias • Short", text_color=i_upBiasColor, text_size=size.tiny)
+    table.cell(dashboard, 1, row, biasUpShortText, text_color=biasUpShortColor, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Down Bias • Long", text_color=i_downBiasColor, text_size=size.tiny)
+    table.cell(dashboard, 1, row, biasDownLongText, text_color=biasDownLongColor, text_size=size.tiny)
+    row += 1
+
+    table.cell(dashboard, 0, row, "Down Bias • Short", text_color=i_downBiasColor, text_size=size.tiny)
+    table.cell(dashboard, 1, row, biasDownShortText, text_color=biasDownShortColor, text_size=size.tiny)
     row += 1
     else
         table.cell(dashboard, 0, row, "Fib Setup", text_color=color.white, text_size=size.tiny)
