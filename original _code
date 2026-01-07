@@ -891,6 +891,7 @@ bgcolor(isEODCheckBar and biasMismatchToday ? color.new(color.red, 85) : na, tit
 // ═══════════════════════════════════════════════════════════════════════════════
 
 int tableRows = i_showDetailStats ? 35 : 29
+int tableRows = i_showDetailStats ? 30 : 24
 var table dashboard = table.new(f_getTablePosition(i_dashPosition), 2, tableRows, bgcolor=color.new(color.black, 80), border_width=1)
 
 if barstate.islast
